@@ -1,9 +1,9 @@
 :root {
-  color: #1f2937;
-  background: #f4f6f8;
+  color: #18201f;
+  background: #eef1ef;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+    "IBM Plex Sans", Inter, "Microsoft YaHei", "Segoe UI", ui-sans-serif,
+    system-ui, sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -12,10 +12,17 @@
   box-sizing: border-box;
 }
 
-body {
+html,
+body,
+#app {
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100%;
   margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background: #eef1ef;
 }
 
 button,
@@ -23,92 +30,4 @@ input,
 textarea,
 select {
   font: inherit;
-}
-
-.app-shell {
-  min-height: 100vh;
-}
-
-.app-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 72px;
-  padding: 0 32px;
-  color: #ffffff;
-  background: #18212f;
-  border-bottom: 3px solid #23a36d;
-}
-
-.app-header h1,
-.app-header p,
-.status-panel h2,
-.status-panel p {
-  margin: 0;
-  letter-spacing: 0;
-}
-
-.app-header h1 {
-  font-size: 20px;
-  line-height: 1.4;
-}
-
-.app-header p {
-  color: #b7c0cc;
-  font-size: 13px;
-}
-
-.app-main {
-  width: min(960px, 100%);
-  margin: 0 auto;
-  padding: 32px;
-}
-
-.status-panel {
-  padding: 24px;
-  background: #ffffff;
-  border: 1px solid #dfe3e8;
-  border-radius: 6px;
-}
-
-.panel-heading {
-  display: flex;
-  gap: 24px;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.panel-heading h2 {
-  font-size: 18px;
-  line-height: 1.5;
-}
-
-.panel-heading p {
-  color: #667085;
-  font-size: 14px;
-}
-
-code {
-  color: #087f5b;
-  font-family: "Cascadia Code", Consolas, monospace;
-}
-
-@media (max-width: 640px) {
-  .app-header {
-    height: 64px;
-    padding: 0 16px;
-  }
-
-  .app-header p {
-    display: none;
-  }
-
-  .app-main {
-    padding: 16px;
-  }
-
-  .status-panel {
-    padding: 16px;
-  }
 }
