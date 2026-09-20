@@ -1,0 +1,1 @@
+"""MCP Inspector backend application."""
