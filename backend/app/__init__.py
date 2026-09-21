@@ -1,1 +1,1 @@
-"""MCP Inspector backend application."""
+"""MCP Inspector 后端应用程序包。"""
