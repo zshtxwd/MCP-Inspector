@@ -35,3 +35,18 @@ py scripts/start.py
 前端地址为 `http://localhost:5173`，后端地址为
 `http://localhost:8000`，MCP Streamable HTTP 端点为
 `http://localhost:8000/mcp`。
+
+## MCP 服务配置
+
+后端通过 `MCP_SERVERS_JSON` 环境变量维护 `serverId` 到 MCP Streamable
+HTTP 服务的映射。未设置时默认提供指向本项目 MCP 端点的 `local` 配置。
+
+```powershell
+$env:MCP_SERVERS_JSON = '{"server-001":{"name":"filesystem","url":"https://example.com/mcp","status":"connected","transport":"streamable-http","headers":{"Authorization":"Bearer token"}}}'
+```
+
+配置后可通过 `GET /api/mcp-servers/{serverId}/capabilities` 获取该服务的
+tools、resources、resource templates 和 prompts。通过
+`GET /api/mcp-servers` 可获取全部已配置服务，也可通过同一路径的 POST 请求
+新增服务，并通过 `GET/DELETE /api/mcp-servers/{serverId}` 查询或删除服务。
+所有 API 响应统一包含 `success`、`code` 和 `data` 字段。
