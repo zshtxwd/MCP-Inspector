@@ -2,6 +2,7 @@
 
 from unittest.mock import Mock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
@@ -16,10 +17,17 @@ def _server_configs() -> dict[str, McpServerConfig]:
             name="filesystem",
             url="http://localhost:3001",
             status="connected",
+            headers={"Authorization": "Bearer test-token", "X-Client": "inspector"},
         ),
         "server-002": McpServerConfig(
             name="github",
             url="http://localhost:3002",
+        ),
+        "server-003": McpServerConfig(
+            name=None,
+            url="https://example.com/mcp",
+            status="connected",
+            headers={"X-Environment": "staging"},
         ),
     }
 
@@ -51,6 +59,13 @@ def test_list_mcp_servers(monkeypatch) -> None:
                 "name": "github",
                 "url": "http://localhost:3002",
                 "status": "disconnected",
+                "transport": "streamable-http",
+            },
+            {
+                "id": "server-003",
+                "name": "server-003",
+                "url": "https://example.com/mcp",
+                "status": "connected",
                 "transport": "streamable-http",
             },
         ],
@@ -98,6 +113,39 @@ def test_create_mcp_server_returns_unified_validation_error() -> None:
     )
     assert result.status_code == 422
     # 解析后的 JSON 响应体，用于断言错误结构。
+    body = result.json()
+    assert body["success"] is False
+    assert body["code"] == 422
+    assert body["data"] is None
+    assert body["message"] == "Request validation failed"
+    assert body["errors"]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "name": "   ",
+            "transport": "streamable-http",
+            "url": "http://localhost:3001",
+        },
+        {
+            "name": "filesystem",
+            "transport": "streamable-http",
+            "url": "   ",
+        },
+        {
+            "name": "filesystem",
+            "transport": "streamable-http",
+            "url": "http://localhost:3001",
+            "headers": {"Authorization": "Bearer token"},
+        },
+    ],
+)
+def test_create_mcp_server_rejects_blank_or_unsupported_fields(payload) -> None:
+    result = TestClient(app).post("/api/mcp-servers", json=payload)
+
+    assert result.status_code == 422
     body = result.json()
     assert body["success"] is False
     assert body["code"] == 422

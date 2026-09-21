@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Component } from 'vue'
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import axios from 'axios'
+import { http } from '@/api/http'
 import {
   Database,
   MessageSquareText,
@@ -14,15 +16,15 @@ import {
   Wrench,
 } from '@lucide/vue'
 
-type ServerId = 'local' | 'staging'
+type ServerId = string
 type TabId = 'tools' | 'resources' | 'prompts'
 
 interface McpServer {
   id: ServerId
   name: string
-  endpoint: string
+  url: string
   transport: string
-  connected: boolean
+  status: 'connected' | 'disconnected'
   latency: number | null
 }
 
@@ -31,6 +33,65 @@ interface ResourceItem {
   name: string
   description: string
   params?: ToolParam[]
+}
+
+interface ApiResponse<T> {
+  success: boolean
+  code: number
+  data: T
+  message?: string
+}
+
+interface McpServerSummary {
+  id: string
+  name: string
+  url: string
+  status: 'connected' | 'disconnected'
+  transport: 'streamable-http'
+}
+
+interface McpTool {
+  name: string
+  title?: string
+  description?: string
+  inputSchema?: {
+    type?: string
+    properties?: Record<string, Record<string, unknown>>
+    required?: string[]
+  }
+}
+
+interface McpResource {
+  name: string
+  uri: string
+  description?: string
+}
+
+interface McpResourceTemplate {
+  name: string
+  uriTemplate: string
+  description?: string
+}
+
+interface McpPromptArgument {
+  name: string
+  description?: string
+  required?: boolean
+}
+
+interface McpPrompt {
+  name: string
+  description?: string
+  arguments?: McpPromptArgument[]
+}
+
+interface CapabilitiesPayload {
+  data: {
+    tools: McpTool[]
+    resources: McpResource[]
+    resourceTemplates: McpResourceTemplate[]
+    prompts: McpPrompt[]
+  }
 }
 
 type ToolParamType = 'string' | 'number' | 'boolean' | 'select' | 'textarea'
@@ -53,126 +114,16 @@ interface ResourceTab {
   count: number
 }
 
-const servers: McpServer[] = [
-  {
-    id: 'local',
-    name: '本地开发服务器',
-    endpoint: 'http://localhost:8001/mcp',
-    transport: 'Streamable HTTP',
-    connected: true,
-    latency: 22,
-  },
-  {
-    id: 'staging',
-    name: '远程测试服务器',
-    endpoint: 'https://staging.example.com/mcp',
-    transport: 'Streamable HTTP',
-    connected: false,
-    latency: null,
-  },
-]
-
-const resourceItems = reactive<Record<TabId, ResourceItem[]>>({
-  tools: [
-    {
-      id: 'search-files',
-      name: 'search_files',
-      description: '按文件名或文件内容搜索工作区，并返回匹配的文件路径与上下文。',
-      params: [
-        {
-          name: 'query',
-          label: '搜索内容',
-          description: '要查找的文件名或文本内容',
-          type: 'string',
-          required: true,
-          placeholder: '例如：InspectorPage',
-        },
-        {
-          name: 'path',
-          label: '搜索目录',
-          description: '相对于工作区根目录的路径',
-          type: 'string',
-          placeholder: '例如：frontend/src',
-        },
-        {
-          name: 'max_results',
-          label: '结果数量',
-          description: '最多返回的匹配项数量',
-          type: 'number',
-          defaultValue: 20,
-        },
-      ],
-    },
-    {
-      id: 'read-file',
-      name: 'read_file',
-      description: '读取指定文件的完整内容。',
-      params: [
-        { name: 'path', label: '文件路径', description: '要读取的文件路径', type: 'string', required: true, placeholder: '例如：README.md' },
-        { name: 'encoding', label: '字符编码', description: '读取文件时使用的编码', type: 'select', defaultValue: 'utf-8', options: ['utf-8', 'utf-16', 'ascii'] },
-      ],
-    },
-    {
-      id: 'write-file',
-      name: 'write_file',
-      description: '创建文件或更新已有文件。',
-      params: [
-        { name: 'path', label: '文件路径', description: '目标文件路径', type: 'string', required: true, placeholder: '例如：src/example.ts' },
-        { name: 'content', label: '文件内容', description: '要写入文件的文本', type: 'textarea', required: true, placeholder: '输入文件内容' },
-        { name: 'overwrite', label: '允许覆盖', description: '文件存在时覆盖原内容', type: 'boolean', defaultValue: false },
-      ],
-    },
-    {
-      id: 'list-directory',
-      name: 'list_directory',
-      description: '列出指定目录下的文件和文件夹。',
-      params: [
-        { name: 'path', label: '目录路径', description: '要浏览的目录', type: 'string', required: true, placeholder: '例如：frontend/src' },
-        { name: 'recursive', label: '递归读取', description: '包含所有子目录内容', type: 'boolean', defaultValue: false },
-      ],
-    },
-    {
-      id: 'run-command',
-      name: 'run_command',
-      description: '在工作区内执行终端命令。',
-      params: [
-        { name: 'command', label: '命令', description: '要执行的终端命令', type: 'string', required: true, placeholder: '例如：npm run build' },
-        { name: 'cwd', label: '工作目录', description: '命令执行目录', type: 'string', placeholder: '例如：frontend' },
-        { name: 'timeout', label: '超时时间', description: '命令超时秒数', type: 'number', defaultValue: 30 },
-      ],
-    },
-    { id: 'git-status', name: 'get_git_status', description: '查看当前仓库的变更状态。', params: [] },
-    {
-      id: 'fetch-url',
-      name: 'fetch_url',
-      description: '获取指定网页的响应内容。',
-      params: [
-        { name: 'url', label: 'URL', description: '要请求的完整网页地址', type: 'string', required: true, placeholder: 'https://example.com' },
-        { name: 'method', label: '请求方法', description: 'HTTP 请求方法', type: 'select', defaultValue: 'GET', options: ['GET', 'POST'] },
-      ],
-    },
-    {
-      id: 'query-database',
-      name: 'query_database',
-      description: '执行只读数据库查询。',
-      params: [
-        { name: 'query', label: '查询语句', description: '要执行的只读 SQL', type: 'textarea', required: true, placeholder: 'SELECT * FROM users LIMIT 10' },
-      ],
-    },
-  ],
-  resources: [
-    { id: 'readme', name: 'workspace://README.md', description: '项目说明与本地开发指南' },
-    { id: 'config', name: 'config://mcp.json', description: '当前 MCP 服务器配置' },
-    { id: 'logs', name: 'logs://latest', description: '最近一次服务运行日志' },
-  ],
-  prompts: [
-    { id: 'code-review', name: 'code_review', description: '检查代码质量与潜在问题' },
-    { id: 'explain-code', name: 'explain_code', description: '解释所选代码的实现逻辑' },
-    { id: 'fix-bug', name: 'fix_bug', description: '分析错误并给出修复方案' },
-    { id: 'write-tests', name: 'write_tests', description: '为现有功能补充测试用例' },
-    { id: 'summarize', name: 'summarize_changes', description: '整理本次代码变更摘要' },
-  ],
-})
+const servers = ref<McpServer[]>([])
+const resourceItems = reactive<Record<TabId, ResourceItem[]>>({ tools: [], resources: [], prompts: [] })
+const serversLoading = ref(false)
+const capabilitiesLoading = ref(false)
+const pageError = ref<string | null>(null)
+const addServerDialogVisible = ref(false)
+const newServerName = ref('')
+const newServerUrl = ref('')
+const addServerLoading = ref(false)
+let capabilityRequestId = 0
 
 const tabs = computed<ResourceTab[]>(() => [
   { id: 'tools', label: '工具', icon: Wrench, count: resourceItems.tools.length },
@@ -185,10 +136,8 @@ const activeTabId = ref<TabId>('tools')
 const selectedToolId = ref('search-files')
 const formValues = ref<Record<string, string | number | boolean>>({})
 
-const selectedServer = computed(
-  () => servers.find((server) => server.id === selectedServerId.value) ?? servers[0],
-)
-const connectedServerCount = computed(() => servers.filter((server) => server.connected).length)
+const selectedServer = computed(() => servers.value.find((server) => server.id === selectedServerId.value) ?? null)
+const connectedServerCount = computed(() => servers.value.filter((server) => server.status === 'connected').length)
 const activeTab = computed(
   () => tabs.value.find((tab) => tab.id === activeTabId.value) ?? tabs.value[0],
 )
@@ -203,15 +152,13 @@ function createParamValues(tool: ResourceItem) {
   )
 }
 
-formValues.value = createParamValues(selectedTool.value ?? resourceItems.tools[0])
-
 function formatCount(count: number) {
   return count > 99 ? '99+' : String(count)
 }
 
-function formatServerStatus(server: McpServer) {
-  if (!server.connected) return '离线'
-  return server.latency === null ? '--' : `${server.latency} ms`
+function formatServerStatus(server: McpServer | null) {
+  if (!server || server.status !== 'connected') return '离线'
+  return server.latency === null ? '在线' : `${server.latency} ms`
 }
 
 function selectTab(tabId: TabId) {
@@ -255,6 +202,116 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
   selectTab(nextTab.id)
   document.getElementById(`tab-${nextTab.id}`)?.focus()
 }
+
+function toToolParam(name: string, schema: Record<string, unknown>, required: boolean): ToolParam {
+  const schemaType = schema.type === 'integer' ? 'number' : schema.type
+  const enumValues = Array.isArray(schema.enum) ? schema.enum.filter((value): value is string => typeof value === 'string') : []
+  const type: ToolParamType = enumValues.length ? 'select' : schemaType === 'number' ? 'number' : schemaType === 'boolean' ? 'boolean' : 'string'
+  const defaultValue = schema.default as string | number | boolean | undefined
+  return {
+    name,
+    label: typeof schema.title === 'string' ? schema.title : name,
+    description: typeof schema.description === 'string' ? schema.description : '',
+    type,
+    required,
+    defaultValue: defaultValue ?? (type === 'boolean' ? false : type === 'select' ? enumValues[0] : ''),
+    options: enumValues.length ? enumValues : undefined,
+  }
+}
+
+function mapTool(tool: McpTool): ResourceItem {
+  const schema = tool.inputSchema ?? {}
+  const properties = schema.properties ?? {}
+  const required = new Set(schema.required ?? [])
+  return {
+    id: tool.name,
+    name: tool.name,
+    description: tool.description ?? tool.title ?? 'MCP 工具',
+    params: Object.entries(properties).map(([name, property]) => toToolParam(name, property, required.has(name))),
+  }
+}
+
+function errorMessage(reason: unknown, fallback: string) {
+  if (axios.isAxiosError(reason)) {
+    return reason.response?.data?.message ?? reason.message
+  }
+  return fallback
+}
+
+async function loadCapabilities(serverId: string) {
+  const requestId = ++capabilityRequestId
+  capabilitiesLoading.value = true
+  pageError.value = null
+  resourceItems.tools = []
+  resourceItems.resources = []
+  resourceItems.prompts = []
+  try {
+    const response = await http.get<ApiResponse<CapabilitiesPayload>>(`/mcp-servers/${encodeURIComponent(serverId)}/capabilities`)
+    if (requestId !== capabilityRequestId) return
+    const capabilities = response.data.data.data
+    resourceItems.tools = capabilities.tools.map(mapTool)
+    resourceItems.resources = [
+      ...capabilities.resources.map((resource) => ({ id: resource.uri, name: resource.uri, description: resource.description ?? resource.name })),
+      ...capabilities.resourceTemplates.map((template) => ({ id: template.uriTemplate, name: template.uriTemplate, description: template.description ?? template.name })),
+    ]
+    resourceItems.prompts = capabilities.prompts.map((prompt) => ({
+      id: prompt.name,
+      name: prompt.name,
+      description: prompt.description ?? 'MCP 提示词',
+      params: prompt.arguments?.map((argument) => ({ name: argument.name, label: argument.name, description: argument.description ?? '', type: 'string', required: argument.required })) ?? [],
+    }))
+    selectedToolId.value = resourceItems.tools[0]?.id ?? ''
+    formValues.value = selectedTool.value ? createParamValues(selectedTool.value) : {}
+  } catch (reason) {
+    if (requestId !== capabilityRequestId) return
+    pageError.value = errorMessage(reason, '无法加载服务器能力')
+  } finally {
+    if (requestId === capabilityRequestId) capabilitiesLoading.value = false
+  }
+}
+
+async function loadServers() {
+  serversLoading.value = true
+  pageError.value = null
+  try {
+    const response = await http.get<ApiResponse<McpServerSummary[]>>('/mcp-servers')
+    servers.value = response.data.data.map((server) => ({ ...server, latency: null }))
+    if (!servers.value.some((server) => server.id === selectedServerId.value)) {
+      selectedServerId.value = servers.value[0]?.id ?? ''
+    }
+    if (selectedServerId.value) await loadCapabilities(selectedServerId.value)
+  } catch (reason) {
+    pageError.value = errorMessage(reason, '无法加载 MCP 服务器')
+  } finally {
+    serversLoading.value = false
+  }
+}
+
+async function createServer() {
+  if (!newServerName.value.trim() || !newServerUrl.value.trim()) return
+  addServerLoading.value = true
+  pageError.value = null
+  try {
+    await http.post<ApiResponse<null>>('/mcp-servers', { name: newServerName.value.trim(), transport: 'streamable-http', url: newServerUrl.value.trim() })
+    addServerDialogVisible.value = false
+    const createdName = newServerName.value.trim()
+    const createdUrl = newServerUrl.value.trim()
+    newServerName.value = ''
+    newServerUrl.value = ''
+    await loadServers()
+    const created = servers.value.find((server) => server.name === createdName && server.url === createdUrl)
+    if (created) selectedServerId.value = created.id
+  } catch (reason) {
+    pageError.value = errorMessage(reason, '无法添加 MCP 服务器')
+  } finally {
+    addServerLoading.value = false
+  }
+}
+
+onMounted(loadServers)
+watch(selectedServerId, (serverId) => {
+  if (serverId) void loadCapabilities(serverId)
+})
 </script>
 
 <template>
@@ -272,10 +329,10 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
 
       <div class="header-meta">
         <span class="environment-badge">本地环境</span>
-        <span class="global-status">
-          <span class="status-dot is-connected" aria-hidden="true" />
+          <span class="global-status">
+          <span class="status-dot" :class="connectedServerCount ? 'is-connected' : 'is-offline'" aria-hidden="true" />
           {{ connectedServerCount }}/{{ servers.length }} 个服务在线
-        </span>
+          </span>
       </div>
     </header>
 
@@ -293,6 +350,7 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
               type="button"
               aria-label="添加 MCP 服务器"
               title="添加 MCP 服务器"
+              @click="addServerDialogVisible = true"
             >
               <Plus :size="19" :stroke-width="2" aria-hidden="true" />
             </button>
@@ -319,7 +377,7 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
                 <span class="server-primary-row">
                   <span
                     class="status-dot"
-                    :class="serverItem.connected ? 'is-connected' : 'is-offline'"
+                    :class="serverItem.status === 'connected' ? 'is-connected' : 'is-offline'"
                     aria-hidden="true"
                   />
                   <span class="server-name">{{ serverItem.name }}</span>
@@ -327,9 +385,9 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
                     {{ formatServerStatus(serverItem) }}
                   </span>
                 </span>
-                <span class="server-endpoint">{{ serverItem.endpoint }}</span>
                 <span class="server-secondary-row">
-                  <span>{{ serverItem.transport }}</span>
+                  <span class="server-endpoint">{{ serverItem.url }}</span>
+                  <span class="transport-badge">{{ serverItem.transport }}</span>
                 </span>
               </button>
             </li>
@@ -337,11 +395,11 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
 
           <footer class="panel-footer">
             <Radio :size="15" :stroke-width="1.8" aria-hidden="true" />
-            <span>{{ selectedServer.connected ? '连接正常' : '等待服务器恢复' }}</span>
+            <span>{{ selectedServer?.status === 'connected' ? '连接正常' : '等待服务器恢复' }}</span>
           </footer>
         </section>
 
-        <section class="panel resource-panel" aria-label="服务器能力">
+        <section class="panel resource-panel" aria-label="服务器能力" :aria-busy="capabilitiesLoading">
           <div class="tab-bar" role="tablist" aria-label="能力类型">
             <button
               v-for="(tab, index) in tabs"
@@ -364,7 +422,10 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
             </button>
           </div>
 
+          <div v-if="capabilitiesLoading" class="capability-state" role="status" aria-live="polite">正在加载能力...</div>
+          <div v-else-if="pageError" class="capability-state is-error" role="alert">{{ pageError }}</div>
           <div
+            v-else
             id="resource-tab-panel"
             class="resource-list"
             role="tabpanel"
@@ -402,22 +463,7 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
         </section>
       </aside>
 
-      <section class="workspace" aria-labelledby="workspace-title">
-        <header class="workspace-header">
-          <div>
-            <p class="workspace-context">
-              <span
-                class="status-dot"
-                :class="selectedServer.connected ? 'is-connected' : 'is-offline'"
-                aria-hidden="true"
-              />
-              {{ selectedServer.name }}
-            </p>
-            <h2 id="workspace-title">检查器</h2>
-          </div>
-          <span class="transport-badge">{{ selectedServer.transport }}</span>
-        </header>
-
+      <section class="workspace" aria-label="检查器">
         <div class="workspace-canvas">
           <section class="workspace-section basic-info" aria-labelledby="basic-info-title">
             <header class="workspace-section-header">
@@ -545,15 +591,34 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
           <span class="connection-label">
             <span
               class="status-dot"
-              :class="selectedServer.connected ? 'is-connected' : 'is-offline'"
+              :class="selectedServer?.status === 'connected' ? 'is-connected' : 'is-offline'"
               aria-hidden="true"
             />
             {{ formatServerStatus(selectedServer) }}
           </span>
-          <code>{{ selectedServer.endpoint }}</code>
+          <code>{{ selectedServer?.url ?? '未选择服务器' }}</code>
         </footer>
       </section>
     </div>
+
+    <el-dialog v-model="addServerDialogVisible" title="添加 MCP 服务器" width="420px">
+      <form class="add-server-form" @submit.prevent="createServer">
+        <label class="param-field">
+          <span class="param-label">名称</span>
+          <input v-model="newServerName" class="form-control" required placeholder="例如：本地开发服务器" />
+        </label>
+        <label class="param-field">
+          <span class="param-label">Streamable HTTP 地址</span>
+          <input v-model="newServerUrl" class="form-control" type="url" required placeholder="http://127.0.0.1:8001/mcp" />
+        </label>
+        <div class="params-actions">
+          <button class="secondary-button" type="button" @click="addServerDialogVisible = false">取消</button>
+          <button class="primary-button" type="submit" :disabled="addServerLoading">
+            {{ addServerLoading ? '添加中...' : '添加服务器' }}
+          </button>
+        </div>
+      </form>
+    </el-dialog>
   </main>
 </template>
 
@@ -598,7 +663,6 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
 .header-meta,
 .panel-title,
 .global-status,
-.workspace-context,
 .connection-label {
   display: flex;
   align-items: center;
@@ -623,8 +687,6 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
 .brand h1,
 .brand p,
 .panel-title h2,
-.workspace-header h2,
-.workspace-context,
 .workspace-canvas h3,
 .workspace-canvas h4,
 .workspace-canvas p {
@@ -820,10 +882,10 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
 .server-item {
   display: flex;
   width: 100%;
-  min-height: 88px;
+  min-height: 68px;
   flex-direction: column;
   justify-content: center;
-  gap: 7px;
+  gap: 6px;
   padding: 10px 11px;
   color: var(--color-ink);
   text-align: left;
@@ -857,7 +919,7 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
 
 .server-secondary-row {
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
   color: var(--color-faint);
   font-size: 11px;
 }
@@ -896,7 +958,9 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
 }
 
 .server-endpoint {
-  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  width: auto;
   overflow: hidden;
   color: var(--color-muted);
   font-family: "Cascadia Code", Consolas, monospace;
@@ -904,6 +968,10 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.server-secondary-row .transport-badge {
+  flex: 0 0 auto;
 }
 
 .panel-footer {
@@ -1111,35 +1179,34 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
   overflow: hidden;
 }
 
-.workspace-header {
-  display: flex;
-  min-height: 72px;
-  flex: 0 0 72px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  padding: 10px 20px;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.workspace-context {
-  gap: 8px;
-  color: var(--color-muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.workspace-header h2 {
-  margin-top: 2px;
-  font-size: 18px;
-  font-weight: 650;
-  line-height: 1.4;
-}
-
 .transport-badge {
+  min-height: 22px;
+  padding: 2px 6px;
+  border-radius: 3px;
   color: #825f18;
   background: #fbf3df;
   border: 1px solid #ead7a7;
+  font-size: 10px;
+}
+
+.capability-state {
+  display: grid;
+  min-height: 160px;
+  place-items: center;
+  padding: 24px;
+  color: var(--color-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.capability-state.is-error {
+  color: #a43c3c;
+}
+
+.add-server-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .workspace-canvas {
@@ -1147,9 +1214,12 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
   min-height: 360px;
   flex: 1;
   grid-template-rows: minmax(300px, auto) minmax(0, 1fr);
-  gap: 12px;
-  padding: 12px;
-  background: #f4f6f5;
+  gap: 0;
+  margin: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  overflow: hidden;
 }
 
 .workspace-section {
@@ -1158,9 +1228,11 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 5px;
+  background: transparent;
+}
+
+.basic-info {
+  border-bottom: 1px solid var(--color-border);
 }
 
 .workspace-section-header {
@@ -1397,7 +1469,11 @@ function handleTabKeydown(event: KeyboardEvent, currentIndex: number) {
   min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(0, 2.4fr) minmax(240px, 1fr);
-  gap: 12px;
+  gap: 0;
+}
+
+.timeline-section {
+  border-right: 1px solid var(--color-border);
 }
 
 .section-empty-state {
@@ -1497,6 +1573,11 @@ button {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(300px, 1.4fr) minmax(220px, 1fr);
   }
+
+  .timeline-section {
+    border-right: 0;
+    border-bottom: 1px solid var(--color-border);
+  }
 }
 
 @media (max-width: 700px) {
@@ -1581,14 +1662,9 @@ button {
     display: none;
   }
 
-  .workspace-header {
-    padding-inline: 14px;
-  }
-
   .workspace-canvas {
     grid-template-rows: auto minmax(0, 1fr);
-    gap: 8px;
-    padding: 8px;
+    margin: 8px;
   }
 
   .param-fields {
