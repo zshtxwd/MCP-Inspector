@@ -9,13 +9,20 @@
 
 ## 本地开发
 
-启动后端：
+启动 Inspector 后端：
 
 ```powershell
 cd backend
 py -m venv .venv
 .\.venv\Scripts\python -m pip install -e .
 .\.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+```
+
+另开一个终端启动测试 MCP 服务器：
+
+```powershell
+cd backend
+.\.venv\Scripts\python -m uvicorn app.test_mcp_server:app --reload --port 8001
 ```
 
 启动前端：
@@ -26,7 +33,8 @@ npm install
 npm run dev
 ```
 
-完成上述依赖安装后，也可以在项目根目录同时启动前后端：
+完成上述依赖安装后，也可以在项目根目录同时启动 Inspector 后端、测试 MCP
+服务器和前端：
 
 ```powershell
 py scripts/start.py
@@ -34,12 +42,12 @@ py scripts/start.py
 
 前端地址为 `http://localhost:5173`，后端地址为
 `http://localhost:8000`，MCP Streamable HTTP 端点为
-`http://localhost:8000/mcp`。
+`http://localhost:8001/mcp`。
 
 ## MCP 服务配置
 
 后端通过 `MCP_SERVERS_JSON` 环境变量维护 `serverId` 到 MCP Streamable
-HTTP 服务的映射。未设置时默认提供指向本项目 MCP 端点的 `local` 配置。
+HTTP 服务的映射。未设置时默认提供指向独立测试 MCP 服务器的 `local` 配置。
 
 ```powershell
 $env:MCP_SERVERS_JSON = '{"server-001":{"name":"filesystem","url":"https://example.com/mcp","status":"connected","transport":"streamable-http","headers":{"Authorization":"Bearer token"}}}'

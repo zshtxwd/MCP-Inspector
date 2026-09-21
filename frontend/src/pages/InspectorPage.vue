@@ -57,7 +57,7 @@ const servers: McpServer[] = [
   {
     id: 'local',
     name: '本地开发服务器',
-    endpoint: 'http://localhost:8000/mcp',
+    endpoint: 'http://localhost:8001/mcp',
     transport: 'Streamable HTTP',
     connected: true,
     latency: 22,

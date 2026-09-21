@@ -27,8 +27,8 @@ def get_server_configs() -> ServerConfigMap:
     if raw_configs is None:
         return {
             "local": McpServerConfig(
-                name="MCP Inspector",
-                url="http://127.0.0.1:8000/mcp",
+                name="MCP Test Server",
+                url="http://127.0.0.1:8001/mcp",
                 status="connected",
             )
         }

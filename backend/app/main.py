@@ -1,13 +1,8 @@
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from mcp.server.fastmcp import FastMCP
-
 from app.capabilities import CapabilitiesResponse, fetch_capabilities
 from app.responses import ApiErrorResponse, ApiResponse
 from app.server_config import (
@@ -24,25 +19,9 @@ from app.servers import (
 )
 
 
-mcp = FastMCP("MCP Inspector", stateless_http=True, json_response=True)
-
-
-@mcp.tool()
-def ping(message: str = "pong") -> str:
-    """Return a message to verify that the MCP server is available."""
-    return message
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    async with mcp.session_manager.run():
-        yield
-
-
 app = FastAPI(
     title="MCP Inspector API",
     version="0.1.0",
-    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -150,7 +129,3 @@ async def delete_mcp_server(server_id: str) -> ApiResponse[None]:
     if not delete_server_config(server_id):
         raise HTTPException(status_code=404, detail="MCP server not found")
     return ApiResponse(data=None)
-
-
-# Keep this mount last so FastAPI routes are matched before the MCP ASGI app.
-app.mount("/", mcp.streamable_http_app())

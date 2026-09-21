@@ -36,6 +36,18 @@ def main() -> int:
             cwd=ROOT / "backend",
         ),
         subprocess.Popen(
+            [
+                str(backend_python),
+                "-m",
+                "uvicorn",
+                "app.test_mcp_server:app",
+                "--reload",
+                "--port",
+                "8001",
+            ],
+            cwd=ROOT / "backend",
+        ),
+        subprocess.Popen(
             [npm, "run", "dev"],
             cwd=ROOT / "frontend",
         ),
